@@ -9,25 +9,26 @@ import datetime
 
 class Base(BaseModel):
     name: str
-    avatarUrl: str
-
-
-class User(Base):
-    id: str
-    username: str
-    isOnline: bool
+    avatar: str
+    clientId: str
 
     def __hash__(self) -> int:
-        return id.__hash__()
+        return clientId.__hash__()
 
     def __eq__(self, other: object) -> bool:
         if other is None:
             return False
         if self is other:
             return True
-        if not isinstance(other, User):
+        if not isinstance(other, Base):
             return False
-        return self.id == other.id
+        return self.clientId == other.clientId
+
+
+class User(Base):
+    id: str
+    username: str
+    isOnline: bool
 
 
 class Group(Base):
@@ -36,12 +37,18 @@ class Group(Base):
     creator: User
 
 
+class Membership(BaseModel):
+    id: int
+    member: User
+    group: Group
+
+
 # Messages
 class Message(BaseModel):
     id: int
     sender: User
     content: str
-    time: datetime.datetime
+    time: datetime.datetime = datetime.datetime.now().isoformat()
     read: bool = False
     delivered: bool = False
 

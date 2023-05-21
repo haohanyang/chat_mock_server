@@ -33,9 +33,10 @@ class Data(Singleton):
         self.users = [
             models.User(
                 id=item["login"]["uuid"],
+                clientId="u" + item["login"]["uuid"],
                 username=item["login"]["username"],
                 name=item["name"]["first"] + " " + item["name"]["last"],
-                avatarUrl=item["picture"]["large"],
+                avatar=item["picture"]["large"],
                 isOnline=random.choice([True, False]),
             )
             for item in results
@@ -48,19 +49,21 @@ class Data(Singleton):
 
         creators = random.sample(self.users, GROUP_COUNT)
         for i in range(GROUP_COUNT):
+            creator = creators[i]
             # Randomly choose users to be in the group
             groupMembers = random.sample(self.users, random.randint(1, USER_COUNT))
             # groupMembersIds = [user.id for user in groupMembers]
 
             # Make sure the creator is in the group
-            if creators[i] not in groupMembers:
-                groupMembers.append(creators[i])
+            if creator not in groupMembers:
+                groupMembers.append(creator)
 
             group = models.Group(
                 id=i,
+                clientId="g"+str(i),
                 name=f"Group {i}",
-                avatarUrl="https://picsum.photos/200",
-                creator=creators[i],
+                avatar=creator.avatar,
+                creator=creator,
                 members=groupMembers,
             )
             self.groups.append(group)

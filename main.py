@@ -5,7 +5,7 @@ from fastapi import APIRouter, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from data import Data
-from models import User, Group, UserMessage, GroupMessage
+from models import User, Group, UserMessage, GroupMessage, Membership
 
 # Mock in-memory database
 db = Data()
@@ -15,34 +15,50 @@ app = FastAPI(
     description="A mock chat server for testing purposes and API prototyping",
 )
 
+# allow CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+authRouter = APIRouter(
+    prefix="/api/auth",
+    tags=["Authentication controller"],
+    responses={404: {"description": "Not found"}},
+)
+
 userRouter = APIRouter(
-    prefix="/users",
+    prefix="/api/users",
     tags=["User controller"],
     responses={404: {"description": "Not found"}},
 )
 
 groupRouter = APIRouter(
-    prefix="/groups",
+    prefix="/api/groups",
     tags=["Group controller"],
     responses={404: {"description": "Not found"}},
 )
 
 chatRouter = APIRouter(
-    prefix="/chats",
+    prefix="/api/chats",
     tags=["Chat controller"],
     responses={404: {"description": "Not found"}},
 )
 
 
-# User routes
-@userRouter.get("/", tags=["users2"])
-async def getAllUsers():
-    return db.users
-
-
-@userRouter.get("/me")
+# Auth routes
+@authRouter.get("/")
 async def getCurrentUser():
     return db.getCurrentUser()
+
+
+# User routes
+@userRouter.get("/")
+async def getAllUsers():
+    return db.users
 
 
 @userRouter.get("/{username}")
@@ -82,7 +98,27 @@ async def getGroup(id: int):
 
 @groupRouter.post("/")
 async def createGroup(group: Group):
-    db.getGroups().append(group)
+    if len(group.name) < 4 or len(group.name) > 20:
+        return Response(
+            content="Group name must be between 3 and 20 characters", status_code=400
+        )
+
+    creator = db.getUser(group.creator.username)
+    if creator is None:
+        return Response(content="User not found", status_code=403)
+
+    id = len(db.getGroups())
+    newGroup = Group(
+        id=id,
+        name=group.name,
+        creator=creator,
+        avatar=creator.avatar,
+        clientId="g" + str(id),
+        members=[creator],
+    )
+    db.getGroups().append(newGroup)
+
+    return newGroup
 
 
 @groupRouter.get("/{id}/members")
@@ -93,15 +129,36 @@ async def getGroupMembers(id: int):
     return Response(content="Group not found", status_code=404)
 
 
-@groupRouter.post("/{id}/members")
-async def addGroupMember(id: int, user: User):
-    group = db.getGroup(id)
-    if group is not None:
-        if user not in group.members:
-            group.members.append(user)
-            return Response(content="ok", status_code=201)
-        return Response(content="User already in group", status_code=403)
-    return Response(content="Group not found", status_code=404)
+@groupRouter.post("/{id}/memberships")
+async def addMembership(id: int, membership: Membership):
+    group = db.getGroup(membership.group.id)
+    if group == None:
+        return Response(content="Group not found", status_code=404)
+    user = db.getUser(membership.member.username)
+    if user == None:
+        return Response(content="User not found", status_code=404)
+
+    if user not in group.members:
+        group.members.append(user)
+        return Membership(id=0, group=group, member=user)
+    else:
+        return Response(content="You are already in the group", status_code=403)
+
+
+@groupRouter.delete("/{id}/memberships")
+async def removeMembership(id: int, membership: Membership):
+    group = db.getGroup(membership.group.id)
+    if group == None:
+        return Response(content="Group not found", status_code=404)
+    user = db.getUser(membership.member.username)
+    if user == None:
+        return Response(content="User not found", status_code=404)
+
+    if user in group.members:
+        group.members.remove(user)
+        return Response(content="ok", status_code=200)
+    else:
+        return Response(content="User not in group", status_code=403)
 
 
 # chat controller
@@ -119,7 +176,6 @@ async def getAllGroupChats():
 
 @chatRouter.get("/users/{username1}/{username2}")
 async def getUserChat(username1: str, username2: str):
-    time.sleep(2)
     chats: List[UserMessage] = []
     for message in db.getUserChats():
         if (
@@ -135,7 +191,6 @@ async def getUserChat(username1: str, username2: str):
 
 @chatRouter.get("/groups/{id}")
 async def getGroupChat(id: int):
-    time.sleep(2)
     group = db.getGroup(id)
     if group is None:
         return Response(content=f"Group {id} not found", status_code=404)
@@ -149,16 +204,12 @@ async def getGroupChat(id: int):
 
 @chatRouter.post("/users")
 async def sendUserMessage(message: UserMessage):
-    time.sleep(2)
-
     db.getUserChats().append(message)
     return Response(content="ok", status_code=201)
 
 
 @chatRouter.post("/groups")
 async def sendGroupMessage(message: GroupMessage):
-    time.sleep(2)
-
     db.getGroupChats().append(message)
     return Response(content="ok", status_code=201)
 
@@ -168,10 +219,7 @@ async def root():
     return Response(content="This is a mock server", status_code=200)
 
 
+app.include_router(authRouter)
 app.include_router(userRouter)
 app.include_router(groupRouter)
 app.include_router(chatRouter)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-)
